@@ -2,6 +2,7 @@
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
 #include "gui.h"
+#include "pluto.h"
 #include <stdio.h>
 #include <SDL.h>
 #if defined(IMGUI_IMPL_OPENGL_ES2)
@@ -78,13 +79,17 @@ int main(int, char**)
     io.Fonts->AddFontDefault();
 
     // Our state
+    bool connected = false;
     bool show_demo_window = true;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     // Main loop
     bool done = false;
-
-    gui gui;
+    pluto pluto;
+    gui gui(
+        std::bind(&pluto::connect, &pluto),
+        std::bind(&pluto::isConnected, &pluto)
+    );
 
     while (!done)
     {
@@ -113,6 +118,9 @@ int main(int, char**)
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
+        if(pluto.isConnected()) {
+            pluto.getSamples();
+        }
         gui.render();
 
         // Rendering

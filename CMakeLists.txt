@@ -35,6 +35,7 @@ ExternalProject_Add(
     libad9361-iio
     GIT_REPOSITORY https://github.com/analogdevicesinc/libad9361-iio
     GIT_TAG v0.3
+    #DEPENDS libiio
     INSTALL_COMMAND   ""
     CMAKE_ARGS
         -DLIBIIO_INCLUDEDIR=${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio/
@@ -64,6 +65,14 @@ target_include_directories(pluto17
         ${imgui_SOURCE_DIR}/backends
         ${imgui_SOURCE_DIR}/examples
         ${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio/
+        ${CMAKE_BINARY_DIR}/libad9361-iio-prefix/src/libad9361-iio
 )
 
-target_link_libraries(pluto17 PRIVATE SDL2 ${CMAKE_DL_LIBS} ${OPENGL_gl_LIBRARY})  # iio )#ad9361-iio)
+target_link_libraries(pluto17
+    PRIVATE
+    SDL2
+    ${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio-build/iio.framework/iio
+    ${CMAKE_BINARY_DIR}/libad9361-iio-prefix/src/libad9361-iio-build/ad9361.framework/ad9361
+    ${CMAKE_DL_LIBS}
+    ${OPENGL_gl_LIBRARY}
+)
