@@ -5,8 +5,9 @@
 #include <sstream>
 #include <iio.h>
 #include <ad9361.h>
+#include <fftw3.h>
 #include <complex>
-//#include "dsp.h"
+#include "dsp.h"
 
 class pluto {
   public:
@@ -19,7 +20,7 @@ class pluto {
     bool isConnected() { return connected; }
     bool getSamples();
 
-    std::vector<std::complex<float>> samples;
+    fftw_complex* getFftBuffer();
 
   private:
 
@@ -71,6 +72,9 @@ class pluto {
 
     // Status: 
     bool connected;
+
+    // Furier Wrapper:
+    fft *fourier;
 };
 
 #endif

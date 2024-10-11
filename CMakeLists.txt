@@ -6,7 +6,7 @@ include(ExternalProject)
 set (CMAKE_CXX_STANDARD 20)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-message(STATUS "Fetching imgui from github")
+message(STATUS "Fetching imgui")
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -42,6 +42,23 @@ ExternalProject_Add(
         -DLIBIIO_LIBRARIES=${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio-build/iio.framework/
 )
 
+#message(STATUS "Fetching liquid-dsp as external project")
+#ExternalProject_Add(
+#    liquid-dsp
+#    GIT_REPOSITORY https://github.com/jgaeddert/liquid-dsp
+#    GIT_TAG v1.6.0
+#    CONFIGURE_COMMAND ./bootstrap.sh && ./configure
+#    BUILD_IN_SOURCE 1
+#    INSTALL_COMMAND   ""
+#)
+
+ExternalProject_Add(
+    fftw3
+    URL http://fftw.org/fftw-3.3.10.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP false
+    INSTALL_COMMAND   ""
+)
+
 find_package(OpenGL REQUIRED)
 
 file(GLOB EXTERNAL_SOURCE
@@ -53,11 +70,12 @@ file(GLOB EXTERNAL_SOURCE
 add_executable(pluto17
     src/main.cpp
     src/gui.cpp
+    src/dsp.cpp
     src/pluto.cpp
     ${EXTERNAL_SOURCE}
 )
 
-add_dependencies(pluto17 libiio libad9361-iio)
+add_dependencies(pluto17 libiio libad9361-iio fftw3)
 
 target_include_directories(pluto17
     PRIVATE
@@ -66,13 +84,15 @@ target_include_directories(pluto17
         ${imgui_SOURCE_DIR}/examples
         ${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio/
         ${CMAKE_BINARY_DIR}/libad9361-iio-prefix/src/libad9361-iio
+        ${CMAKE_BINARY_DIR}/fftw3-prefix/src/fftw3/api
 )
 
 target_link_libraries(pluto17
     PRIVATE
-    SDL2
-    ${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio-build/iio.framework/iio
-    ${CMAKE_BINARY_DIR}/libad9361-iio-prefix/src/libad9361-iio-build/ad9361.framework/ad9361
-    ${CMAKE_DL_LIBS}
-    ${OPENGL_gl_LIBRARY}
+        SDL2
+        ${CMAKE_BINARY_DIR}/libiio-prefix/src/libiio-build/iio.framework/iio
+        ${CMAKE_BINARY_DIR}/libad9361-iio-prefix/src/libad9361-iio-build/ad9361.framework/ad9361
+        ${CMAKE_BINARY_DIR}/fftw3-prefix/src/fftw3-build/libfftw3.dylib
+        ${CMAKE_DL_LIBS}
+        ${OPENGL_gl_LIBRARY}
 )

@@ -8,12 +8,12 @@ pluto::pluto()
 
     // TODO: Check right values:
     sampleRate = 1'000'000;
-    sampleBufferSize = sampleRate/200;
+    sampleBufferSize = 4096; // 4096 samples for FFT
     //lnbReference = 24'000'000;
     //baseQrg = 10'489'470'000;
     //baseQrg = 10489750000;
     //baseQrg =  433500000;
-    baseQrg =  739500000;
+    baseQrg =  739'500'000;
     //rxOffset = 10057000000;
     rxOffset = 0;
     //baseQrgRx = double(baseQrg - 390UL*lnbReference);
@@ -21,10 +21,12 @@ pluto::pluto()
     //baseQrgRx = 432'600'000;
     //qDebug() << "baseQrgRx = " << baseQrgRx;
     baseQrgTx = double(2400000UL - 30UL);
-    bandwidthRx = 1000000;
-    bandwidthTx =   100000;
+    bandwidthRx = 1'000'000;
+    bandwidthTx = 100'000;
     rxBuffer = nullptr;
     txBuffer = nullptr;
+
+    fourier = new fft(sampleBufferSize);
 }
 
 iio_scan_context* pluto::getScanContext()
@@ -180,7 +182,7 @@ bool pluto::connect()
     auto scanContext = getScanContext();
 
     if (scanContext == nullptr) {
-        // TODO emit connectionError("Cannot connect to Pluto: Unable to create scan context");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to create scan context" << std::endl;
         return false;
     }
 
@@ -188,29 +190,29 @@ bool pluto::connect()
     context = getContext(scanContext);
 
     if(context == nullptr) {
-        // TODO emit connectionError("Cannot connect to Pluto: Unable to create context");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to create context" << std::endl;
         return false;
     }
 
     // Get TX and RX Stream Devices:
     if(!getStreamDevice(context, TX, &tx)) {
-        // emit connectionError("Cannot connect to Pluto: Unable to find TX steraming device");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to find TX steraming device" << std::endl;
         return false;
     }
 
     if(!getStreamDevice(context, RX, &rx)) {
-        // emit connectionError("Cannot connect to Pluto: Unable to find RX steraming device");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to find RX steraming device" << std::endl;
         return false;
     }
 
 
     if(!configureChannel(context, bandwidthRx, sampleRate, baseQrg, "A_BALANCED", RX, 0)) {
-        // emit connectionError("Cannot connect to Pluto: Unable to configure RX channel");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to configure RX channel" << std::endl;
         return false;
     }
 
     if(!configureChannel(context, bandwidthTx, sampleRate, baseQrg, "A", TX, 0)) {
-        // emit connectionError("Cannot connect to Pluto: Unable to configure RX channel");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to configure RX channel" << std::endl;
         return false;
     }
 
@@ -221,7 +223,7 @@ bool pluto::connect()
     result &= getStreamChannel(context, TX, tx, 1, &tx0q);
 
     if(!result) {
-        //emit connectionError("Cannot connect to Pluto: Unable to find streaming channel");
+        std::cout << "ERROR: Cannot connect to Pluto: Unable to find streaming channel" << std::endl;
         return false;
     }
 
@@ -232,13 +234,13 @@ bool pluto::connect()
 
     rxBuffer = iio_device_create_buffer(rx, sampleBufferSize, false);
     if (!rxBuffer) {
-        //emit connectionError("Could not create RX buffer");
+        std::cout << "Could not create RX buffer" << std::endl;
         return false;
     }
 
     txBuffer = iio_device_create_buffer(tx, sampleBufferSize, false);
     if (!txBuffer) {
-        //emit connectionError("Could not create TX buffer");
+        std::cout << "Could not create TX buffer" << std::endl;
         return false;
     }
 
@@ -253,6 +255,8 @@ bool pluto::getSamples()
 {
     ssize_t numberOfRxBytes = iio_buffer_refill(rxBuffer);
 
+    std::cout << numberOfRxBytes << std::endl;
+
     if(numberOfRxBytes < 0) {
         //emit connectionError("Error Refilling rxBuffer");
         return false;
@@ -265,18 +269,26 @@ bool pluto::getSamples()
     void *p_dat;
     ptrdiff_t p_inc = iio_buffer_step(rxBuffer);
     void *p_end = iio_buffer_end(rxBuffer);
+    unsigned int counter = 0;
     for (p_dat = (char *)iio_buffer_first(rxBuffer, rx0i); p_dat < p_end; p_dat = static_cast<char*>(p_dat) + p_inc) {
         const int16_t i = ((int16_t*)p_dat)[0]; // Real (I)
         const int16_t q = ((int16_t*)p_dat)[1]; // Imag (Q)
-        //std::cout << "I: " << i << " Q: " << q << std::endl;
-        std::complex<float> sample;
-        sample.imag(static_cast<float>(q));
-        sample.real(static_cast<float>(i));
-        samples.push_back(sample);
-        //fourier->processSample(sample);
+
+        fourier->in[counter][0] = (static_cast<double>(q)/32768.0f);
+        fourier->in[counter][1] = (static_cast<double>(i)/32768.0f);
+        
+        //std::cout << "I: " << i << " Q: " << q << " i:" << fourier->in[counter][0] << " q:" << fourier->in[counter][1] << std::endl;
+        counter++;
     }
 
+    fourier->processSamples();
+
     return true;
+}
+
+fftw_complex* pluto::getFftBuffer()
+{
+    return fourier->out;
 }
 
 /* Old Thread version from Qt 

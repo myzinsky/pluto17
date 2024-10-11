@@ -88,7 +88,8 @@ int main(int, char**)
     pluto pluto;
     gui gui(
         std::bind(&pluto::connect, &pluto),
-        std::bind(&pluto::isConnected, &pluto)
+        std::bind(&pluto::isConnected, &pluto),
+        pluto.getFftBuffer()
     );
 
     while (!done)
