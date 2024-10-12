@@ -42,13 +42,18 @@ private:
 
     // Waterfall:
     GLuint waterfallTexture;
-    GLuint shaderProgram;
+    GLuint waterfallShaderProgram;
     int waterfallIndex;
-    //std::vector<std::array<u_int8_t, 4096>> ringBuffer;
-    std::vector<std::array<int, 4096>> ringBuffer;
+    std::vector<std::array<int, 4096>> waterfallRingBuffer;
     void initWaterfall();
-    //std::array<ImVec4, 10000> gradient;
     std::map<int, ImVec4> gradient;
     ImGuiWindow* window;
     void prepareGradient();
+
+    // Zoom:
+    GLuint zoomTexture;
+    GLuint zoomShaderProgram;
+    void initZoom();
+    std::vector<std::array<int, 512>> zoomRingBuffer;
+    int zoomIndex;
 };
