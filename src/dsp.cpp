@@ -17,6 +17,7 @@ fft::~fft()
 void fft::processSamples()
 {
     //std::cout<< "Processing samples with FFT" << std::endl;
+    hammingWindow();
     fftw_execute(p);
     shiftFft();
 }
@@ -25,5 +26,14 @@ void fft::shiftFft()
 {
     for (uint64_t i = 0; i < N / 2; ++i) {
         std::swap(out[i], out[i + N / 2]);
+    }
+}
+
+void fft::hammingWindow()
+{
+    // https://de.wikipedia.org/wiki/Fensterfunktion#Hamming-Fenster
+    for(uint64_t i = 0; i < N; i++) {
+        in[i][0] *= 0.54 - 0.46 * cos(2 * M_PI * i / N);
+        in[i][1] *= 0.54 - 0.46 * cos(2 * M_PI * i / N);
     }
 }

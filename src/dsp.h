@@ -13,6 +13,7 @@ class fft
     ~fft();
     void processSamples();
     void shiftFft();
+    void hammingWindow();
 
     fftw_complex *in;
     fftw_complex *out;
