@@ -12,9 +12,11 @@ class fft
     fft(uint64_t N = 4096);
     ~fft();
     void processSamples();
+    void shiftFft();
 
     fftw_complex *in;
     fftw_complex *out;
+    fftw_complex *shifted;
 
     private:
     fftw_plan p;

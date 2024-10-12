@@ -12,13 +12,14 @@
 class pluto {
   public:
     
-    pluto();
+    pluto(uint64_t N = 4096);
 
     enum iodev { RX, TX };
 
     bool connect();
     bool isConnected() { return connected; }
     bool getSamples();
+    uint64_t getN();
 
     fftw_complex* getFftBuffer();
 
@@ -44,7 +45,7 @@ class pluto {
 
     // Config:
     uint64_t sampleRate;
-    uint64_t sampleBufferSize;
+    uint64_t N;
     uint64_t lnbReference;
     uint64_t baseQrg; 
     uint64_t rxOffset; 

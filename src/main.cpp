@@ -85,11 +85,13 @@ int main(int, char**)
 
     // Main loop
     bool done = false;
-    pluto pluto;
+    uint64_t N = 4096;
+    pluto pluto(N);
     gui gui(
         std::bind(&pluto::connect, &pluto),
         std::bind(&pluto::isConnected, &pluto),
-        pluto.getFftBuffer()
+        pluto.getFftBuffer(),
+        N
     );
 
     while (!done)

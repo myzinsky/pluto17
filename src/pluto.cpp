@@ -1,32 +1,24 @@
 #include "pluto.h"
 
-pluto::pluto()
+pluto::pluto(uint64_t N) : N(N)
 {
     std::cout << "Pluto created" << std::endl;
 
     connected = false;
 
     // TODO: Check right values:
-    sampleRate = 1'000'000;
-    sampleBufferSize = 4096; // 4096 samples for FFT
-    //lnbReference = 24'000'000;
-    //baseQrg = 10'489'470'000;
-    //baseQrg = 10489750000;
-    //baseQrg =  433500000;
-    baseQrg =  739'500'000;
-    //rxOffset = 10057000000;
-    rxOffset = 0;
-    //baseQrgRx = double(baseQrg - 390UL*lnbReference);
-    baseQrgRx = baseQrg - rxOffset; //432'600'000;
-    //baseQrgRx = 432'600'000;
-    //qDebug() << "baseQrgRx = " << baseQrgRx;
+    sampleRate = 576'000;
+    baseQrg = 10'489'750'000;
+    rxOffset = 9'749'975'946;
+    baseQrgRx = baseQrg - rxOffset;
+    std::cout << "baseQrgRx = " << baseQrgRx << std::endl;
     baseQrgTx = double(2400000UL - 30UL);
-    bandwidthRx = 1'000'000;
+    bandwidthRx = 576'000;
     bandwidthTx = 100'000;
     rxBuffer = nullptr;
     txBuffer = nullptr;
 
-    fourier = new fft(sampleBufferSize);
+    fourier = new fft(N);
 }
 
 iio_scan_context* pluto::getScanContext()
@@ -72,7 +64,7 @@ bool pluto::configureChannel(iio_context *context, int64_t bandwidth, int64_t sa
 
     if(type == TX) {
         setTxPower(0.0);
-        setTxQrg(baseQrgRx);
+        setTxQrg(baseQrgRx); // TODO set TX QRG
     } else {
         writeToChannel(channel, "gain_control_mode", "slow_attack");
         setRxQrg(baseQrgRx);
@@ -232,13 +224,13 @@ bool pluto::connect()
     iio_channel_enable(tx0i);
     iio_channel_enable(tx0q);
 
-    rxBuffer = iio_device_create_buffer(rx, sampleBufferSize, false);
+    rxBuffer = iio_device_create_buffer(rx, N, false);
     if (!rxBuffer) {
         std::cout << "Could not create RX buffer" << std::endl;
         return false;
     }
 
-    txBuffer = iio_device_create_buffer(tx, sampleBufferSize, false);
+    txBuffer = iio_device_create_buffer(tx, N, false);
     if (!txBuffer) {
         std::cout << "Could not create TX buffer" << std::endl;
         return false;
@@ -274,8 +266,8 @@ bool pluto::getSamples()
         const int16_t i = ((int16_t*)p_dat)[0]; // Real (I)
         const int16_t q = ((int16_t*)p_dat)[1]; // Imag (Q)
 
-        fourier->in[counter][0] = (static_cast<double>(q)/32768.0f);
-        fourier->in[counter][1] = (static_cast<double>(i)/32768.0f);
+        fourier->in[counter][0] = (static_cast<double>(i)/32768.0f);
+        fourier->in[counter][1] = (static_cast<double>(q)/32768.0f);
         
         //std::cout << "I: " << i << " Q: " << q << " i:" << fourier->in[counter][0] << " q:" << fourier->in[counter][1] << std::endl;
         counter++;
@@ -288,42 +280,5 @@ bool pluto::getSamples()
 
 fftw_complex* pluto::getFftBuffer()
 {
-    return fourier->out;
+    return fourier->out;//shifted;
 }
-
-/* Old Thread version from Qt 
-void pluto::start() {
-    rxThread = QThread::create([&]() {rxFunction();});
-    rxThread->start();
-}
-
-void pluto::rxFunction()
-{
-    forever {
-        ssize_t numberOfRxBytes = iio_buffer_refill(rxBuffer);
-
-        if(numberOfRxBytes < 0) {
-            emit connectionError("Error Refilling rxBuffer");
-        }
-
-        uint8_t *start = (uint8_t *)iio_buffer_first(rxBuffer, rx0i);
-        uint8_t *end = (uint8_t *)iio_buffer_end(rxBuffer);
-
-        // READ: Get pointers to RX buf and read IQ from RX buf port 0
-        void *p_dat;
-		ptrdiff_t p_inc = iio_buffer_step(rxBuffer);
-		void *p_end = iio_buffer_end(rxBuffer);
-		for (p_dat = (char *)iio_buffer_first(rxBuffer, rx0i); p_dat < p_end; p_dat = static_cast<char*>(p_dat) + p_inc) {
-			const int16_t i = ((int16_t*)p_dat)[0]; // Real (I)
-			const int16_t q = ((int16_t*)p_dat)[1]; // Imag (Q)
-            std::complex<float> sample;
-            sample.imag(static_cast<float>(q));
-            sample.real(static_cast<float>(i));
-            fourier->processSample(sample);
-		}
-
-        QThread::msleep(20);
-
-    }
-}
-*/
