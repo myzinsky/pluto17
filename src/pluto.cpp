@@ -247,10 +247,8 @@ bool pluto::getSamples()
 {
     ssize_t numberOfRxBytes = iio_buffer_refill(rxBuffer);
 
-    std::cout << numberOfRxBytes << std::endl;
-
     if(numberOfRxBytes < 0) {
-        //emit connectionError("Error Refilling rxBuffer");
+        std::cout << "ERROR: Error in Refilling rxBuffer" << std::endl;
         return false;
     }
 
@@ -269,7 +267,6 @@ bool pluto::getSamples()
         fourier->in[counter][0] = (static_cast<double>(i)/32768.0f);
         fourier->in[counter][1] = (static_cast<double>(q)/32768.0f);
         
-        //std::cout << "I: " << i << " Q: " << q << " i:" << fourier->in[counter][0] << " q:" << fourier->in[counter][1] << std::endl;
         counter++;
     }
 
@@ -280,5 +277,5 @@ bool pluto::getSamples()
 
 fftw_complex* pluto::getFftBuffer()
 {
-    return fourier->out;//shifted;
+    return fourier->out;
 }

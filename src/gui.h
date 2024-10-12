@@ -37,7 +37,7 @@ private:
 
     // Draw Subwindows:
     void renderRX(float width, float height, float xoffset);
-    void renderWaterfall(float width, float height, float xoffset);
+    void renderMain(float width, float height, float xoffset);
     void renderTX(float width, float height, float xoffset);
 
     // Waterfall:
@@ -54,6 +54,7 @@ private:
     GLuint zoomTexture;
     GLuint zoomShaderProgram;
     void initZoom();
-    std::vector<std::array<int, 512>> zoomRingBuffer;
+    std::vector<std::array<int, 128>> zoomRingBuffer;
     int zoomIndex;
+    int zoomOffset;
 };

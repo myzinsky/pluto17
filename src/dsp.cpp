@@ -16,7 +16,6 @@ fft::~fft()
 
 void fft::processSamples()
 {
-    //std::cout<< "Processing samples with FFT" << std::endl;
     hammingWindow();
     fftw_execute(p);
     shiftFft();
@@ -24,6 +23,7 @@ void fft::processSamples()
 
 void fft::shiftFft()
 {
+    // Perform an FFT-Shift to bring the zero frequency component to the center
     for (uint64_t i = 0; i < N / 2; ++i) {
         std::swap(out[i], out[i + N / 2]);
     }
