@@ -191,6 +191,20 @@ void gui::initWaterfall() {
 
 void gui::prepareGradient()
 {
+    //      yellow
+    //   max ---- e.g. -80 dB
+    //        y2w                aSize
+    //     a ---- e.g. -85 dB
+    //       white 
+    //        
+    //        to                 cSize 
+    //        
+    //       blue
+    //     b ---- e.g. -100 dB
+    //        b2b                bSize
+    //   min ---- e.g. -105 dB
+    //       black
+
     int dist = max - min;
     int aSize = dist/10;
     int bSize = dist/10;
