@@ -6,6 +6,7 @@
 #include <iostream>
 #include <map>
 #include <fftw3.h>
+#include "dsp.h"
 
 #ifdef __APPLE__
 #include <OpenGL/gl3.h>

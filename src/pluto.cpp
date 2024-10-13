@@ -6,8 +6,9 @@ pluto::pluto(uint64_t N) : N(N)
 
     connected = false;
 
-    // TODO: Check right values:
-    sampleRate = 576'000;
+    // For complex signals the sample rate is the same as the bandwidth
+    // (Reason: for I nyquist holds and for Q as well)
+    sampleRate = 576'000; 
     baseQrg = 10'489'750'000;
     rxOffset = 9'749'975'946;
     baseQrgRx = baseQrg - rxOffset;
@@ -279,3 +280,4 @@ fftw_complex* pluto::getFftBuffer()
 {
     return fourier->out;
 }
+

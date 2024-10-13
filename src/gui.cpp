@@ -152,9 +152,10 @@ void gui::renderRX(float width, float height, float xoffset) {
 void gui::renderMain(float width, float height, float xoffset) {
     ImGui::SetNextWindowPos(ImVec2(xoffset, 0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImVec2(width,height), ImGuiCond_Always);
-    ImGui::Begin("Waterfall", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    ImGui::Begin("Main Control", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
     if(connected == true) {
+        // Get Window Sizes:
         window = ImGui::GetCurrentWindow();
         auto widgetPos = ImGui::GetWindowContentRegionMin();
         auto widgetEndPos = ImGui::GetWindowContentRegionMax();
@@ -162,10 +163,14 @@ void gui::renderMain(float width, float height, float xoffset) {
         widgetPos.y += window->Pos.y;
         widgetEndPos.x += window->Pos.x; 
         widgetEndPos.y += window->Pos.y;
-        auto widgetSize = ImVec2(widgetEndPos.x - widgetPos.x, widgetEndPos.y - widgetPos.y);
+        auto areaSize = ImVec2(widgetEndPos.x - widgetPos.x, (widgetEndPos.y - widgetPos.y));
+        auto spectrumSize = ImVec2(areaSize.x, areaSize.y*0.33);
+        auto bandplanSize = ImVec2(areaSize.x, areaSize.y*0.04);
+        auto waterfallSize = ImVec2(areaSize.x, areaSize.y*0.62);
 
-        std::array<int, 4096> data;
-
+        // Prepare FFT data:
+        std::array<int,4096> data;
+        std::vector<float> spectrumData(N);
         double ofs = 20.0f * ::log10f(1.0f / N);
         double mult = (10.0f / ::log2f(10.0f));
         for(int i = 0; i < N; i++) {
@@ -177,8 +182,73 @@ void gui::renderMain(float width, float height, float xoffset) {
             );
             
             data[i] = static_cast<int>(f);
+            spectrumData[i] = static_cast<float>(f);
             //std::cout << f << " : " << static_cast<int>(data[i]) << std::endl;
         }
+
+        // Spectrogram:
+        ImGui::PlotLines("", spectrumData.data(), N, 0, nullptr, min, max, spectrumSize);
+
+        // Frequency captions on x-axis
+        for (int i = 0; i < 10; ++i) {
+            float x = widgetPos.x + i * (spectrumSize.x / 10);
+            uint64_t fftx = i * (N / 10);
+            // TODO fix this ... seams not to be accurate
+            double freq = fft::bucketToFrequency(fftx, N) / 1'000'000.0;
+            freq = std::round(freq * 1000.0) / 1000.0;
+            std::string label = std::to_string(freq).substr(0, std::to_string(freq).find(".") + 4);// + " MHz"; 
+            ImGui::GetWindowDrawList()->AddText(ImVec2(x, spectrumSize.y+4), IM_COL32(255, 255, 255, 255), label.c_str());
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(x, widgetPos.y), ImVec2(x, spectrumSize.y), IM_COL32(55, 55, 55, 255));
+        }
+
+        // dB captions on y-axis
+        for (int i = 0; i < 9; ++i) {
+            float y = widgetPos.y + i * (spectrumSize.y / 10);
+            float dB = min - i * (max / 10);
+            std::string label = std::to_string(static_cast<int>(dB)) + " dB";
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(widgetPos.x, y), ImVec2(widgetEndPos.x, y), IM_COL32(55, 55, 55, 255));
+            ImGui::GetWindowDrawList()->AddText(ImVec2(widgetPos.x, y), IM_COL32(255, 255, 255, 255), label.c_str());
+        }
+
+        // Band Plan:
+        ImGui::Dummy(bandplanSize);
+        
+        // Define bandplan segments
+        struct BandSegment {
+            uint64_t startFreq;
+            uint64_t endFreq;
+            ImVec4 color;
+            const char* label;
+        };
+
+        std::vector<BandSegment> bandplan = {
+            {10'489'500'000, 10'489'505'000, ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "B"},
+            {10'489'505'000, 10'489'540'000, ImVec4(0.0f, 0.5f, 0.0f, 1.0f), "CW"},
+            {10'489'540'000, 10'489'580'000, ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "NB"},
+            {10'489'580'000, 10'489'650'000, ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "D"},
+            {10'489'650'000, 10'489'745'000, ImVec4(0.0f, 0.0f, 0.8f, 1.0f), "SSB"},
+            {10'489'745'000, 10'489'755'000, ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "B"},
+            // Center: 10'489'750'000
+            {10'489'755'000, 10'489'850'000, ImVec4(0.0f, 0.0f, 0.8f, 1.0f), "SSB"},
+            {10'489'850'000, 10'489'990'000, ImVec4(0.3f, 0.5f, 0.0f, 1.0f), "Mix"},
+            {10'489'990'000, 10'490'000'000, ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "B"},
+        };
+
+        std::cout << "XXX" << std::endl;
+        // Draw bandplan segments
+        for (const auto& segment : bandplan) {
+            uint64_t startBucket = fft::frequencyToBucket(segment.startFreq, N);
+            uint64_t endBucket = fft::frequencyToBucket(segment.endFreq, N);
+
+            std::cout << segment.startFreq << ":" << startBucket << std::endl;
+
+            float startX = widgetPos.x + (static_cast<float>(startBucket) / N) * bandplanSize.x;
+            float endX = widgetPos.x + (static_cast<float>(endBucket) / N) * bandplanSize.x;
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(startX, widgetPos.y + spectrumSize.y), ImVec2(endX, widgetEndPos.y), ImColor(segment.color));
+            ImGui::GetWindowDrawList()->AddText(ImVec2((startX + endX) / 2, widgetPos.y + spectrumSize.y), IM_COL32(255, 255, 255, 255), segment.label);
+        }
+
+        // Waterfall:
 
         // Add new data to the ring buffer
         waterfallRingBuffer[waterfallIndex] = data;
@@ -210,26 +280,25 @@ void gui::renderMain(float width, float height, float xoffset) {
         glBindTexture(GL_TEXTURE_2D, waterfallTexture);
         glUniform1i(glGetUniformLocation(waterfallShaderProgram, "texture2"), 1);
 
-        ImGui::Image(waterfallTexture, ImVec2(widgetSize.x, widgetSize.y), ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image(waterfallTexture, ImVec2(waterfallSize.x, waterfallSize.y), ImVec2(0, 1), ImVec2(1, 0));
 
-        // Handle mouse click events on the waterfall image
-        if (ImGui::IsItemClicked()) {
+        // Handle mouse click and drag events on the waterfall image
+        if (ImGui::IsItemClicked() || ImGui::IsMouseDragging(ImGuiMouseButton_Left)) { // TODO: Fix dragging outsite of window
             ImVec2 mousePos = ImGui::GetMousePos();
             float relativeX = mousePos.x - widgetPos.x;
-            int newOffset = static_cast<int>((relativeX / widgetSize.x) * N) - 64; // Center the zoom window around the click
-            zoomOffset = std::max(0, std::min(newOffset, static_cast<int>(N) - 128)); // Ensure the offset is within valid range
+            int newOffset = static_cast<int>((relativeX / waterfallSize.x) * N) - 64; 
+            zoomOffset = std::max(0, std::min(newOffset, static_cast<int>(N) - 128)); 
         }
 
         int offset1 = zoomOffset;
         int offset2 = zoomOffset+(128); // TODO: 128=M
 
-        offset1 = widgetPos.x + offset1 * (widgetSize.x / N);
-        offset2 = widgetPos.x + offset2 * (widgetSize.x / N);
+        offset1 = widgetPos.x + offset1 * (waterfallSize.x / N);
+        offset2 = widgetPos.x + offset2 * (waterfallSize.x / N);
 
-        window->DrawList->AddRectFilled(ImVec2(offset1, widgetPos.y), ImVec2(offset2, widgetEndPos.y), IM_COL32(0, 200, 0, 50));
-        window->DrawList->AddRect(ImVec2(offset1, widgetPos.y), ImVec2(offset2, widgetEndPos.y), IM_COL32(0, 200, 0, 255));
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(offset1, widgetPos.y), ImVec2(offset2, widgetEndPos.y), IM_COL32(0, 200, 0, 50));
+        ImGui::GetWindowDrawList()->AddRect(ImVec2(offset1, widgetPos.y), ImVec2(offset2, widgetEndPos.y), IM_COL32(0, 200, 0, 255));
     }
-
     ImGui::End();
 }
 
@@ -344,7 +413,7 @@ void gui::initZoom() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     zoomIndex = 0;
-    zoomOffset = 0;
+    zoomOffset = N/2-64;
 }
             
 void gui::prepareGradient()
