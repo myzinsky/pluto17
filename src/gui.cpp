@@ -53,7 +53,6 @@ void gui::renderRX(float width, float height, float xoffset) {
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
     ImGui::Begin("RX", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
-
     if (ImGui::CollapsingHeader("Adalm Pluto Settings", ImGuiTreeNodeFlags_DefaultOpen))
     {
         if(isConnectedCallback()) {
@@ -164,9 +163,9 @@ void gui::renderMain(float width, float height, float xoffset) {
         widgetEndPos.x += window->Pos.x; 
         widgetEndPos.y += window->Pos.y;
         auto areaSize = ImVec2(widgetEndPos.x - widgetPos.x, (widgetEndPos.y - widgetPos.y));
-        auto spectrumSize = ImVec2(areaSize.x, areaSize.y*0.33);
-        auto bandplanSize = ImVec2(areaSize.x, areaSize.y*0.04);
-        auto waterfallSize = ImVec2(areaSize.x, areaSize.y*0.62);
+        auto spectrumSize = ImVec2(areaSize.x, 200);
+        auto bandplanSize = ImVec2(areaSize.x, 8);
+        auto waterfallSize = ImVec2(areaSize.x, areaSize.y-208);
 
         // Prepare FFT data:
         std::array<int,4096> data;
@@ -190,23 +189,22 @@ void gui::renderMain(float width, float height, float xoffset) {
         ImGui::PlotLines("", spectrumData.data(), N, 0, nullptr, min, max, spectrumSize);
 
         // Frequency captions on x-axis
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 1; i < 10; ++i) {
             float x = widgetPos.x + i * (spectrumSize.x / 10);
             uint64_t fftx = i * (N / 10);
-            // TODO fix this ... seams not to be accurate
             double freq = fft::bucketToFrequency(fftx, N) / 1'000'000.0;
             freq = std::round(freq * 1000.0) / 1000.0;
             std::string label = std::to_string(freq).substr(0, std::to_string(freq).find(".") + 4);// + " MHz"; 
-            ImGui::GetWindowDrawList()->AddText(ImVec2(x, spectrumSize.y+4), IM_COL32(255, 255, 255, 255), label.c_str());
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(x, widgetPos.y), ImVec2(x, spectrumSize.y), IM_COL32(55, 55, 55, 255));
+            ImGui::GetWindowDrawList()->AddText(ImVec2(x-ImGui::CalcTextSize(label.c_str()).x/2, spectrumSize.y+4), IM_COL32(255, 255, 255, 255), label.c_str());
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(x, widgetPos.y+spectrumSize.y-10), ImVec2(x, spectrumSize.y+spectrumSize.y), IM_COL32(255, 255, 255, 255));
         }
 
         // dB captions on y-axis
-        for (int i = 0; i < 9; ++i) {
+        for (int i = 0; i < 9; i++) {
             float y = widgetPos.y + i * (spectrumSize.y / 10);
-            float dB = min - i * (max / 10);
+            float dB = max - i * ((max-min) / 10);
             std::string label = std::to_string(static_cast<int>(dB)) + " dB";
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(widgetPos.x, y), ImVec2(widgetEndPos.x, y), IM_COL32(55, 55, 55, 255));
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(widgetPos.x, y), ImVec2(widgetEndPos.x, y), IM_COL32(255, 255, 255, 255));
             ImGui::GetWindowDrawList()->AddText(ImVec2(widgetPos.x, y), IM_COL32(255, 255, 255, 255), label.c_str());
         }
 
@@ -245,7 +243,7 @@ void gui::renderMain(float width, float height, float xoffset) {
             float startX = widgetPos.x + (static_cast<float>(startBucket) / N) * bandplanSize.x;
             float endX = widgetPos.x + (static_cast<float>(endBucket) / N) * bandplanSize.x;
             ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(startX, widgetPos.y + spectrumSize.y), ImVec2(endX, widgetEndPos.y), ImColor(segment.color));
-            ImGui::GetWindowDrawList()->AddText(ImVec2((startX + endX) / 2, widgetPos.y + spectrumSize.y), IM_COL32(255, 255, 255, 255), segment.label);
+            ImGui::GetWindowDrawList()->AddText(ImVec2((startX + endX) / 2 - ImGui::CalcTextSize(segment.label).x/2, widgetPos.y + spectrumSize.y), IM_COL32(255, 255, 255, 255), segment.label);
         }
 
         // Waterfall:
