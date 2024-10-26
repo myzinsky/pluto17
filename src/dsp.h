@@ -16,13 +16,13 @@ class fft
     void shiftFft();
     void hammingWindow();
 
-    static uint64_t bucketToFrequency(uint64_t bucketId, uint64_t N)
+    static double bucketToFrequency(uint64_t bucketId, uint64_t N)
     {
-        uint64_t baseQrg = 10'489'750'000; // Center frequency in Hz
-        uint64_t sampleRate = 576'000; // Sample rate in samples per second
-        uint64_t frequencyResolution = sampleRate / N;
-        int64_t frequencyOffset = static_cast<int64_t>(bucketId) - static_cast<int64_t>(N/2);
-        uint64_t frequency = baseQrg + frequencyOffset * frequencyResolution;
+        double baseQrg = 10'489'750'000.0; // Center frequency in Hz
+        double sampleRate = 576'000.0; // Sample rate in samples per second
+        double frequencyResolution = static_cast<double>(sampleRate) / static_cast<double>(N);
+        double frequencyOffset = static_cast<double>(bucketId) - static_cast<double>(N/2);
+        double frequency = baseQrg + frequencyOffset * frequencyResolution;
         return frequency;
     }
 

@@ -80,18 +80,12 @@ private:
     GLuint waterfallTexture;
     GLuint waterfallShaderProgram;
     int waterfallIndex;
+    int zoomOffset;
     std::vector<std::array<int, 4096>> waterfallRingBuffer;
     void initWaterfall();
     std::map<int, ImVec4> gradient;
     ImGuiWindow* window;
     void prepareGradient();
-    void renderVFO();
-
-    // Zoom:
-    GLuint zoomTexture;
-    GLuint zoomShaderProgram;
-    void initZoom();
-    std::vector<std::array<int, 128>> zoomRingBuffer;
-    int zoomIndex;
-    int zoomOffset;
+    void renderVFO(float height);
+    void dragVFO();
 };

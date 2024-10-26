@@ -8,7 +8,6 @@ gui::gui(
     uint64_t *carrier,
     uint64_t N
 ) : waterfallRingBuffer(256),
-    zoomRingBuffer(128),
     spectrumHistory(100, std::vector<float>(N, 0.0f)),
     carrier(carrier),
     N(N)
@@ -19,11 +18,6 @@ gui::gui(
     // Initialize waterfallRingBuffer with -1 * dynamicRange
     for (auto& buffer : waterfallRingBuffer) {
         buffer.fill(-1 * dynamicRange);
-    }
-
-    // Initialize zoomRingBuffer with 0
-    for (auto& buffer : zoomRingBuffer) {
-        buffer.fill(0);
     }
 
     // Prepare the Gradient:
@@ -44,7 +38,6 @@ gui::gui(
 
     // Initialize the OpenGL Shaders
     initWaterfall();
-    initZoom();
 
     // Setup Callbacks
     this->connectCallback = connectCallback;
@@ -108,64 +101,30 @@ void gui::renderRX(float width, float height, float xoffset) {
 
     if (ImGui::CollapsingHeader("Zoom", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        int M = 128;
         if(connected==true) {
-            window = ImGui::GetCurrentWindow();
-            auto widgetPos = ImGui::GetWindowContentRegionMin();
-            auto widgetEndPos = ImGui::GetWindowContentRegionMax();
-            widgetPos.x += window->Pos.x;
-            widgetPos.y += window->Pos.y;
-            widgetEndPos.x += window->Pos.x; 
-            widgetEndPos.y += window->Pos.y;
-            auto widgetSize = ImVec2(widgetEndPos.x - widgetPos.x, 128);
-
-            std::array<int, 128> data;
-
-            double ofs = 20.0f * ::log10f(1.0f / N);
-            double mult = (10.0f / ::log2f(10.0f));
-            for (int i = zoomOffset; i < zoomOffset+M; i++)
-            {
-                double f = (
-                    mult * log2f(
-                        fftBuffer[i][0]*fftBuffer[i][0] + fftBuffer[i][1]*fftBuffer[i][1]
-                    ) + ofs 
+            ImPlot::SetNextAxesLimits(
+                fft::bucketToFrequency(zoomOffset, N) / 1'000'000.0,
+                fft::bucketToFrequency(zoomOffset+127, N) / 1'000'000.0,
+                0,
+                127,
+                ImPlotCond_Always
+            );
+            if(ImPlot::BeginPlot("", ImVec2(-1,128))) {
+                ImPlot::SetupAxis(ImAxis_X1, "", ImPlotAxisFlags_NoTickMarks | ImPlotAxisFlags_NoTickLabels);
+                ImPlot::SetupAxis(ImAxis_Y1, "", ImPlotAxisFlags_NoTickMarks | ImPlotAxisFlags_NoTickLabels);
+                ImPlot::PlotImage(
+                    "", // Waterfall
+                    static_cast<intptr_t>(waterfallTexture),
+                    ImVec2(fft::bucketToFrequency(0, N) / 1'000'000.0, 128),
+                    ImVec2(fft::bucketToFrequency(4095, N) / 1'000'000.0, 0)
                 );
-
-                data[i-zoomOffset] = static_cast<int>(f);
+                double x1 = (fft::bucketToFrequency(zoomOffset+63, N) - filterWidth/2.0) / 1'000'000.0;
+                double x2 = (fft::bucketToFrequency(zoomOffset+63, N) + filterWidth/2.0) / 1'000'000.0;
+                double y1 = 0;
+                double y2 = 128;
+                ImPlot::DragRect(0, &x1, &y1, &x2, &y2, ImVec4(0.0, 0.78, 0.0, 0.75), ImPlotDragToolFlags_NoInputs);
+                ImPlot::EndPlot();
             }
-
-            // Add new data to the ring buffer
-            zoomRingBuffer[zoomIndex] = data;
-            zoomIndex = (zoomIndex + 1) % zoomRingBuffer.size();
-
-            // Create a texture from the ring buffer
-            std::vector<u_int8_t> zoomTextureData(M * 128 * 3);
-            for (int i = 0; i < 128; ++i) {
-                for (int j = 0; j < M; ++j) {
-                    int index = ((zoomIndex + i) % 128) * M + j;
-                    int value = zoomRingBuffer[index / M][index % M];
-                    ImVec4 color = gradient[value];
-                    zoomTextureData[(i * M + j) * 3 + 0] = static_cast<u_int8_t>(color.x * 255); // Red
-                    zoomTextureData[(i * M + j) * 3 + 1] = static_cast<u_int8_t>(color.y * 255); // Green
-                    zoomTextureData[(i * M + j) * 3 + 2] = static_cast<u_int8_t>(color.z * 255); // Blue
-                }
-            }
-
-            // Update texture data
-            glBindTexture(GL_TEXTURE_2D, zoomTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, M, 128, 0, GL_RGB, GL_UNSIGNED_BYTE, zoomTextureData.data());
-            glGenerateMipmap(GL_TEXTURE_2D);
-
-            // Use the shader program
-            glUseProgram(zoomShaderProgram);
-
-            // Bind the texture to the shader
-            glActiveTexture(GL_TEXTURE0); // Use texture unit 0
-            glBindTexture(GL_TEXTURE_2D, zoomTexture);
-            glUniform1i(glGetUniformLocation(zoomShaderProgram, "texture1"), 0);
-
-            ImGui::SliderInt("Offset", &zoomOffset, 0, N-M);
-            ImGui::Image(zoomTexture, ImVec2(widgetSize.x, widgetSize.y), ImVec2(0, 1), ImVec2(1, 0));
         }
     }
 
@@ -241,7 +200,7 @@ void gui::renderMain(float width, float height, float xoffset) {
                 ImPlot::SetupAxisFormat(ImAxis_X1, "%.3f MHz");
                 ImPlot::SetupAxis(ImAxis_X1, "", ImPlotAxisFlags_Opposite);
                 ImPlot::PlotLine("Spectrum", frequencyBins.data(), averagedSpectrumData.data(), 4096);
-                renderVFO();
+                dragVFO();
                 ImPlot::EndPlot();
             }
 
@@ -265,13 +224,7 @@ void gui::renderMain(float width, float height, float xoffset) {
             }
 
             // Setup Waterfall Plot:
-            ImPlot::SetNextAxesLimits(
-                fft::bucketToFrequency(0, N) / 1'000'000.0,
-                fft::bucketToFrequency(4095, N) / 1'000'000.0,
-                0,
-                255,
-                ImPlotCond_Always
-            );
+            ImPlot::SetNextAxesLimits(fft::bucketToFrequency(0, N) / 1'000'000.0, fft::bucketToFrequency(4095, N) / 1'000'000.0, 0, 255, ImPlotCond_Always);
             if (ImPlot::BeginPlot("")) { // Waterfall
                 // Setup Axis Format:
                 ImPlot::SetupAxisFormat(ImAxis_X1, "%.3f MHz");
@@ -315,7 +268,8 @@ void gui::renderMain(float width, float height, float xoffset) {
                     ImVec2(fft::bucketToFrequency(4095, N) / 1'000'000.0, 0)
                 );
 
-                renderVFO();
+                dragVFO();
+                renderVFO(height);
                 ImPlot::EndPlot();
             }
             ImPlot::EndSubplots();
@@ -383,61 +337,9 @@ void gui::initWaterfall() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     waterfallIndex = 0;
-}
-
-void gui::initZoom() {
-    glGenTextures(1, &zoomTexture);
-
-    // Shader source code
-    const char* vertexShaderSource = R"(
-    #version 330 core
-    layout(location = 0) in vec2 aPos;
-    layout(location = 1) in vec2 aTexCoord;
-    out vec2 TexCoord;
-    void main() {
-        gl_Position = vec4(aPos, 0.0, 1.0);
-        TexCoord = aTexCoord;
-    }
-    )";
-
-    const char* fragmentShaderSource = R"(
-    #version 330 core
-    out vec4 FragColor;
-    in vec2 TexCoord;
-    uniform sampler2D texture2;
-    void main() {
-        FragColor = texture(texture2, TexCoord);
-    }
-    )";
-
-    // Compile and link shaders
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    zoomShaderProgram = glCreateProgram();
-    glAttachShader(zoomShaderProgram, vertexShader);
-    glAttachShader(zoomShaderProgram, fragmentShader);
-    glLinkProgram(zoomShaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    // Generate texture
-    glBindTexture(GL_TEXTURE_2D, zoomTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    zoomIndex = 0;
     zoomOffset = N/2-64;
 }
-            
+
 void gui::prepareGradient()
 {
     //      yellow
@@ -484,14 +386,20 @@ void gui::prepareGradient()
     }
 }
 
-void gui::renderVFO()
+void gui::renderVFO(float height) {
+    ImPlotPoint plotPos1 = ImPlot::PlotToPixels(filterStart, dmax);
+    ImPlotPoint plotPos2 = ImPlot::PlotToPixels(filterEnd, dmin);
+    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(plotPos1.x,0), ImVec2(plotPos2.x,height), IM_COL32(0, 200, 0, 50));
+    ImGui::GetWindowDrawList()->AddRect(ImVec2(plotPos1.x,0), ImVec2(plotPos2.x,height), IM_COL32(0, 200, 0, 255));
+}
+
+void gui::dragVFO()
 {
     if (ImPlot::IsPlotHovered() && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Left))) {
         ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
         filterStart = mousePos.x - (filterWidth / 1'000'000.0)/2.0;
         filterEnd = mousePos.x + (filterWidth / 1'000'000.0)/2.0;
+        int newOffset = static_cast<int>(fft::frequencyToBucket(mousePos.x*1'000'000.0, N)) - 64; 
+        zoomOffset = std::max(0, std::min(newOffset, static_cast<int>(N) - 128)); 
     }
-    ImPlot::DragRect(0, &filterStart, &dmax, &filterEnd, &dmin, ImVec4(0.0,1.0,0.0,1.0), ImPlotDragToolFlags_NoInputs);
-
-    zoomOffset = fft::frequencyToBucket(filterStart * 1'000'000.0, N); // TODO
 }
