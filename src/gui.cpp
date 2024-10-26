@@ -2,11 +2,15 @@
 
 gui::gui(
     std::function<bool()> connectCallback,
+    std::function<bool()> fakeConnectCallback,
     std::function<bool()> isConnectedCallback,
     fftw_complex* fftBuffer,
+    uint64_t *carrier,
     uint64_t N
 ) : waterfallRingBuffer(256),
     zoomRingBuffer(128),
+    spectrumHistory(100, std::vector<float>(N, 0.0f)),
+    carrier(carrier),
     N(N)
 {
     // Calculate dynamic range (14 bit ADC of Pluto and log2(N) bits for FFT, for each bit we have 6 dB gain)
@@ -23,9 +27,20 @@ gui::gui(
     }
 
     // Prepare the Gradient:
-    max = -65;
-    min = -80;
+    max = -58;
+    min = -85;
+    dmax = static_cast<double>(max);
+    dmin = static_cast<double>(min);
     prepareGradient();
+    historyIndex=0;
+
+    // Generate Frequency Caption for Waterfall:
+    for(int i = 0; i < 4096; i++) {
+        frequencyBins[i] = fft::bucketToFrequency(i, N) / 1'000'000.0;
+    }
+
+    filterStart = (fft::bucketToFrequency(4096/2, N) / 1'000'000.0) - (filterWidth / 1'000'000.0)/2.0;
+    filterEnd = (fft::bucketToFrequency(4096/2, N) / 1'000'000.0) + (filterWidth / 1'000'000.0)/2.0;
 
     // Initialize the OpenGL Shaders
     initWaterfall();
@@ -33,11 +48,13 @@ gui::gui(
 
     // Setup Callbacks
     this->connectCallback = connectCallback;
+    this->fakeConnectCallback = fakeConnectCallback;
     this->isConnectedCallback = isConnectedCallback;
     this->fftBuffer = fftBuffer;
 
     connected = false;
 
+    filterWidth = 3'000.0;
 }
 
 void gui::render() {
@@ -68,6 +85,13 @@ void gui::renderRX(float width, float height, float xoffset) {
                     std::cout << "ERROR: Cannot connect to Pluto" << std::endl;
                     // TODO: show error window with reason
                 }
+            }
+        }
+
+        if (ImGui::Button("Fake Connect")) {
+            if(fakeConnectCallback()){
+                std::cout << "Connected to Fake" << std::endl;
+                connected = true;
             }
         }
     }
@@ -165,137 +189,137 @@ void gui::renderMain(float width, float height, float xoffset) {
         auto areaSize = ImVec2(widgetEndPos.x - widgetPos.x, (widgetEndPos.y - widgetPos.y));
         auto spectrumSize = ImVec2(areaSize.x, 200);
         auto bandplanSize = ImVec2(areaSize.x, 8);
-        auto waterfallSize = ImVec2(areaSize.x, areaSize.y-208);
+        auto waterfallSize = ImVec2(areaSize.x, areaSize.y-220);
 
         // Prepare FFT data:
         std::array<int,4096> data;
         std::vector<float> spectrumData(N);
-        double ofs = 20.0f * ::log10f(1.0f / N);
-        double mult = (10.0f / ::log2f(10.0f));
-        for(int i = 0; i < N; i++) {
+        for(int n = 0; n < N; n++) {
 
-            double f = (
-                mult * log2f(
-                    fftBuffer[i][0]*fftBuffer[i][0] + fftBuffer[i][1]*fftBuffer[i][1]
-                ) + ofs 
-            );
+            // Normalization:
+            double i = fftBuffer[n][0] / static_cast<double>(N); 
+            double q = fftBuffer[n][1] / static_cast<double>(N); 
+
+            // Calculate the absolute value:
+            double f = sqrt(i*i + q*q);
+
+            // Calculate the power in dBFS:
+            double p = 20.0 * log10(f);
+
+            //if (n>2500 && n<2510) {
+            //    p = 0.0;
+            //} else {
+            //    p = -120.0;
+            //}
             
-            data[i] = static_cast<int>(f);
-            spectrumData[i] = static_cast<float>(f);
-            //std::cout << f << " : " << static_cast<int>(data[i]) << std::endl;
+            data[n] = static_cast<int>(p);
+            spectrumData[n] = static_cast<float>(p);
         }
 
-        // Spectrogram:
-        ImGui::PlotLines("", spectrumData.data(), N, 0, nullptr, min, max, spectrumSize);
+        // Average Spectrogram Data:
+        // Add current spectrum data to history
+        spectrumHistory[historyIndex] = spectrumData;
+        historyIndex = (historyIndex + 1) % 100;
 
-        // Frequency captions on x-axis
-        for (int i = 1; i < 10; ++i) {
-            float x = widgetPos.x + i * (spectrumSize.x / 10);
-            uint64_t fftx = i * (N / 10);
-            double freq = fft::bucketToFrequency(fftx, N) / 1'000'000.0;
-            freq = std::round(freq * 1000.0) / 1000.0;
-            std::string label = std::to_string(freq).substr(0, std::to_string(freq).find(".") + 4);// + " MHz"; 
-            ImGui::GetWindowDrawList()->AddText(ImVec2(x-ImGui::CalcTextSize(label.c_str()).x/2, spectrumSize.y+4), IM_COL32(255, 255, 255, 255), label.c_str());
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(x, widgetPos.y+spectrumSize.y-10), ImVec2(x, spectrumSize.y+spectrumSize.y), IM_COL32(255, 255, 255, 255));
-        }
-
-        // dB captions on y-axis
-        for (int i = 0; i < 9; i++) {
-            float y = widgetPos.y + i * (spectrumSize.y / 10);
-            float dB = max - i * ((max-min) / 10);
-            std::string label = std::to_string(static_cast<int>(dB)) + " dB";
-            ImGui::GetWindowDrawList()->AddLine(ImVec2(widgetPos.x, y), ImVec2(widgetEndPos.x, y), IM_COL32(255, 255, 255, 255));
-            ImGui::GetWindowDrawList()->AddText(ImVec2(widgetPos.x, y), IM_COL32(255, 255, 255, 255), label.c_str());
-        }
-
-        // Band Plan:
-        ImGui::Dummy(bandplanSize);
-        
-        // Define bandplan segments
-        struct BandSegment {
-            uint64_t startFreq;
-            uint64_t endFreq;
-            ImVec4 color;
-            const char* label;
-        };
-
-        std::vector<BandSegment> bandplan = {
-            {10'489'500'000, 10'489'505'000, ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "B"},
-            {10'489'505'000, 10'489'540'000, ImVec4(0.0f, 0.5f, 0.0f, 1.0f), "CW"},
-            {10'489'540'000, 10'489'580'000, ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "NB"},
-            {10'489'580'000, 10'489'650'000, ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "D"},
-            {10'489'650'000, 10'489'745'000, ImVec4(0.0f, 0.0f, 0.8f, 1.0f), "SSB"},
-            {10'489'745'000, 10'489'755'000, ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "B"},
-            // Center: 10'489'750'000
-            {10'489'755'000, 10'489'850'000, ImVec4(0.0f, 0.0f, 0.8f, 1.0f), "SSB"},
-            {10'489'850'000, 10'489'990'000, ImVec4(0.3f, 0.5f, 0.0f, 1.0f), "Mix"},
-            {10'489'990'000, 10'490'000'000, ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "B"},
-        };
-
-        std::cout << "XXX" << std::endl;
-        // Draw bandplan segments
-        for (const auto& segment : bandplan) {
-            uint64_t startBucket = fft::frequencyToBucket(segment.startFreq, N);
-            uint64_t endBucket = fft::frequencyToBucket(segment.endFreq, N);
-
-            std::cout << segment.startFreq << ":" << startBucket << std::endl;
-
-            float startX = widgetPos.x + (static_cast<float>(startBucket) / N) * bandplanSize.x;
-            float endX = widgetPos.x + (static_cast<float>(endBucket) / N) * bandplanSize.x;
-            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(startX, widgetPos.y + spectrumSize.y), ImVec2(endX, widgetEndPos.y), ImColor(segment.color));
-            ImGui::GetWindowDrawList()->AddText(ImVec2((startX + endX) / 2 - ImGui::CalcTextSize(segment.label).x/2, widgetPos.y + spectrumSize.y), IM_COL32(255, 255, 255, 255), segment.label);
-        }
-
-        // Waterfall:
-
-        // Add new data to the ring buffer
-        waterfallRingBuffer[waterfallIndex] = data;
-        waterfallIndex = (waterfallIndex + 1) % waterfallRingBuffer.size();
-
-        // Create a texture from the ring buffer
-        std::vector<u_int8_t> waterfallTextureData(N * 256 * 3);
-        for (int i = 0; i < 256; ++i) {
-            for (int j = 0; j < N; ++j) {
-                int index = ((waterfallIndex + i) % 256) * N + j;
-                int value = waterfallRingBuffer[index / N][index % N];
-                ImVec4 color = gradient[value];
-                waterfallTextureData[(i * N + j) * 3 + 0] = static_cast<u_int8_t>(color.x * 255); // Red
-                waterfallTextureData[(i * N + j) * 3 + 1] = static_cast<u_int8_t>(color.y * 255); // Green
-                waterfallTextureData[(i * N + j) * 3 + 2] = static_cast<u_int8_t>(color.z * 255); // Blue
+        // Calculate the average spectrum data
+        std::vector<float> averagedSpectrumData(N, 0.0f);
+        for (int i = 0; i < N; ++i) {
+            for (int j = 0; j < 100; ++j) {
+            averagedSpectrumData[i] += spectrumHistory[j][i];
             }
+            averagedSpectrumData[i] /= 100.0f;
         }
 
-        // Update texture data
-        glBindTexture(GL_TEXTURE_2D, waterfallTexture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, N, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, waterfallTextureData.data());
-        glGenerateMipmap(GL_TEXTURE_2D);
+        ImPlotSubplotFlags flags = ImPlotSubplotFlags_LinkAllX;
+        float rowRatios[] = {8,1,8};
+        if(ImPlot::BeginSubplots("", 3, 1, areaSize, flags, rowRatios)) { // Plots
 
-        // Use the shader program
-        glUseProgram(waterfallShaderProgram);
+            // Setup Spectrogram Plot:
+            ImPlot::SetNextAxesLimits(fft::bucketToFrequency(0, N) / 1'000'000.0, fft::bucketToFrequency(4095, N) / 1'000'000.0, min, max, ImPlotCond_Always);
+            if (ImPlot::BeginPlot("")) { // Spectrum
+                ImPlot::SetupAxisFormat(ImAxis_Y1, "%g dB");
+                ImPlot::SetupAxisFormat(ImAxis_X1, "%.3f MHz");
+                ImPlot::SetupAxis(ImAxis_X1, "", ImPlotAxisFlags_Opposite);
+                ImPlot::PlotLine("Spectrum", frequencyBins.data(), averagedSpectrumData.data(), 4096);
+                renderVFO();
+                ImPlot::EndPlot();
+            }
 
-        // Bind the texture to the shader
-        glActiveTexture(GL_TEXTURE1); // Use texture unit 1
-        glBindTexture(GL_TEXTURE_2D, waterfallTexture);
-        glUniform1i(glGetUniformLocation(waterfallShaderProgram, "texture2"), 1);
+            // Setup Bandplan Plot:
+            ImPlot::SetNextAxesLimits(fft::bucketToFrequency(0, N) / 1'000'000.0, fft::bucketToFrequency(4095, N) / 1'000'000.0, 0, 10, ImPlotCond_Always);
+            if (ImPlot::BeginPlot("")) { // Spectrum
+                ImPlot::SetupAxis(ImAxis_X1, "", ImPlotAxisFlags_NoTickMarks | ImPlotAxisFlags_NoTickLabels);
+                ImPlot::SetupAxis(ImAxis_Y1, "", ImPlotAxisFlags_NoTickMarks | ImPlotAxisFlags_NoTickLabels);
 
-        ImGui::Image(waterfallTexture, ImVec2(waterfallSize.x, waterfallSize.y), ImVec2(0, 1), ImVec2(1, 0));
+                // Insert Band Plan:
+                for (const auto& segment : bandplan) {
+                    double x1 = segment.startFreq / 1'000'000.0;
+                    double x2 = segment.endFreq / 1'000'000.0;
+                    double y1 = 0;
+                    double y2 = 10;
+                    ImPlot::DragRect(0, &x1, &y1, &x2, &y2, segment.color, ImPlotDragToolFlags_NoInputs);
+                    ImPlot::PlotText(segment.label, x1+(x2-x1)/2, y2-(y2-y1)/2.0); 
+                }
+                
+                ImPlot::EndPlot();
+            }
 
-        // Handle mouse click and drag events on the waterfall image
-        if (ImGui::IsItemClicked() || ImGui::IsMouseDragging(ImGuiMouseButton_Left)) { // TODO: Fix dragging outsite of window
-            ImVec2 mousePos = ImGui::GetMousePos();
-            float relativeX = mousePos.x - widgetPos.x;
-            int newOffset = static_cast<int>((relativeX / waterfallSize.x) * N) - 64; 
-            zoomOffset = std::max(0, std::min(newOffset, static_cast<int>(N) - 128)); 
-        }
+            // Setup Waterfall Plot:
+            ImPlot::SetNextAxesLimits(
+                fft::bucketToFrequency(0, N) / 1'000'000.0,
+                fft::bucketToFrequency(4095, N) / 1'000'000.0,
+                0,
+                255,
+                ImPlotCond_Always
+            );
+            if (ImPlot::BeginPlot("")) { // Waterfall
+                // Setup Axis Format:
+                ImPlot::SetupAxisFormat(ImAxis_X1, "%.3f MHz");
+                ImPlot::SetupAxis(ImAxis_Y1, "Time", ImPlotAxisFlags_NoTickLabels);
 
-        int offset1 = zoomOffset;
-        int offset2 = zoomOffset+(128); // TODO: 128=M
+                // Add new data to the ring buffer:
+                waterfallRingBuffer[waterfallIndex] = data;
+                waterfallIndex = (waterfallIndex + 1) % waterfallRingBuffer.size();
 
-        offset1 = widgetPos.x + offset1 * (waterfallSize.x / N);
-        offset2 = widgetPos.x + offset2 * (waterfallSize.x / N);
+                // Create a texture from the ring buffer
+                std::vector<u_int8_t> waterfallTextureData(N * 256 * 3);
+                for (int i = 0; i < 256; ++i) {
+                    for (int j = 0; j < N; ++j) {
+                        int index = ((waterfallIndex + i) % 256) * N + j;
+                        int value = waterfallRingBuffer[index / N][index % N];
+                        ImVec4 color = gradient[value];
+                        waterfallTextureData[(i * N + j) * 3 + 0] = static_cast<u_int8_t>(color.x * 255); // Red
+                        waterfallTextureData[(i * N + j) * 3 + 1] = static_cast<u_int8_t>(color.y * 255); // Green
+                        waterfallTextureData[(i * N + j) * 3 + 2] = static_cast<u_int8_t>(color.z * 255); // Blue
+                    }
+                }
 
-        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(offset1, widgetPos.y), ImVec2(offset2, widgetEndPos.y), IM_COL32(0, 200, 0, 50));
-        ImGui::GetWindowDrawList()->AddRect(ImVec2(offset1, widgetPos.y), ImVec2(offset2, widgetEndPos.y), IM_COL32(0, 200, 0, 255));
+                // Update texture data
+                glBindTexture(GL_TEXTURE_2D, waterfallTexture);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, N, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, waterfallTextureData.data());
+                glGenerateMipmap(GL_TEXTURE_2D);
+
+                // Use the shader program
+                glUseProgram(waterfallShaderProgram);
+
+                // Bind the texture to the shader
+                glActiveTexture(GL_TEXTURE1); // Use texture unit 1
+                glBindTexture(GL_TEXTURE_2D, waterfallTexture);
+                glUniform1i(glGetUniformLocation(waterfallShaderProgram, "texture2"), 1);
+
+
+                ImPlot::PlotImage(
+                    "", // Waterfall
+                    static_cast<intptr_t>(waterfallTexture),
+                    ImVec2(fft::bucketToFrequency(0, N) / 1'000'000.0, 255),
+                    ImVec2(fft::bucketToFrequency(4095, N) / 1'000'000.0, 0)
+                );
+
+                renderVFO();
+                ImPlot::EndPlot();
+            }
+            ImPlot::EndSubplots();
+        } 
     }
     ImGui::End();
 }
@@ -430,6 +454,9 @@ void gui::prepareGradient()
     //   min ---- e.g. -105 dB
     //       black
 
+    dmax = static_cast<double>(max);
+    dmin = static_cast<double>(min);
+
     int dist = max - min;
     int aSize = dist/10;
     int bSize = dist/10;
@@ -439,7 +466,6 @@ void gui::prepareGradient()
     
     gradient.clear();
 
-    std::cout<< "Prepare Gradient" << std::endl;
     for (int i = 0; i >= -dynamicRange; i--) {
         if(i > max) { // Yellow
             gradient[i] = ImVec4(1.0f, 1.0f, 0.f, 1.0f); 
@@ -456,4 +482,16 @@ void gui::prepareGradient()
             gradient[i] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f); 
         }
     }
+}
+
+void gui::renderVFO()
+{
+    if (ImPlot::IsPlotHovered() && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Left))) {
+        ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
+        filterStart = mousePos.x - (filterWidth / 1'000'000.0)/2.0;
+        filterEnd = mousePos.x + (filterWidth / 1'000'000.0)/2.0;
+    }
+    ImPlot::DragRect(0, &filterStart, &dmax, &filterEnd, &dmin, ImVec4(0.0,1.0,0.0,1.0), ImPlotDragToolFlags_NoInputs);
+
+    zoomOffset = fft::frequencyToBucket(filterStart * 1'000'000.0, N); // TODO
 }

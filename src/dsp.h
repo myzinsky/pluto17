@@ -4,8 +4,9 @@
 #include <iostream>
 #include <complex>
 #include <fftw3.h>
+#include <liquid.h>
+#include <portaudio.h>
 
-// TODO N evtl. Templaten
 class fft 
 {
     public:
@@ -42,6 +43,43 @@ class fft
     private:
     fftw_plan p;
     uint64_t N;
-};;
+};
+
+class ssb {
+    public:
+    ssb(uint64_t N = 4096);
+    ~ssb();
+    void demodulate(uint64_t carrier);
+    std::array<std::complex<float>,4096> in;
+    //std::array<float,4096> out;
+    float *out;
+
+    private:
+    uint64_t N;
+    nco_crcf mixer;
+    ampmodem demod;
+    rresamp_crcf resamp;
+    agc_rrrf agc;
+    unsigned int Q;
+    unsigned int P;
+    unsigned int buf_len;
+
+    // allocate buffers for sample processing (two each complex and real)
+    std::complex<float> *buf_0;
+    std::complex<float> *buf_1;
+    float *buf_2;
+};
+
+class audio {
+    public:
+    audio(float* buffer);
+    ~audio();
+    void playback(uint64_t N);
+
+    private:
+    PaError err;
+    PaStream *stream;
+    float* buffer;
+};
 
 #endif
