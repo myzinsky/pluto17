@@ -47,6 +47,8 @@ private:
     double filterWidth;
     double filterStart;
     double filterEnd;
+    int zoomOffset;
+    float qrg;
 
     // Draw Subwindows:
     void renderRX(float width, float height, float xoffset);
@@ -80,7 +82,6 @@ private:
     GLuint waterfallTexture;
     GLuint waterfallShaderProgram;
     int waterfallIndex;
-    int zoomOffset;
     std::vector<std::array<int, 4096>> waterfallRingBuffer;
     void initWaterfall();
     std::map<int, ImVec4> gradient;
@@ -88,4 +89,5 @@ private:
     void prepareGradient();
     void renderVFO(float height);
     void dragVFO();
+    bool renderVFOtrigger;
 };

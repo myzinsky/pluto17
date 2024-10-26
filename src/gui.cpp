@@ -63,8 +63,20 @@ void gui::renderRX(float width, float height, float xoffset) {
     ImGui::SetNextWindowSize(ImVec2(width, height), ImGuiCond_Always);
     ImGui::Begin("RX", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
 
-    if (ImGui::CollapsingHeader("Adalm Pluto Settings", ImGuiTreeNodeFlags_DefaultOpen))
-    {
+    if (ImGui::CollapsingHeader("Receive", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if(ImGui::SliderFloat(
+            "QRG",
+            &qrg,
+            fft::bucketToFrequency(0,N)/1'000'000.0,
+            fft::bucketToFrequency(N,N)/1'000'000.0,
+            "%.6f MHz")
+        ){
+            renderVFOtrigger = true;
+            zoomOffset = fft::frequencyToBucket(qrg*1'000'000.0, N);
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Adalm Pluto Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         if(isConnectedCallback()) {
             if (ImGui::Button("Disconnect")) {
                 // TODO: implement disconnect
@@ -338,6 +350,8 @@ void gui::initWaterfall() {
 
     waterfallIndex = 0;
     zoomOffset = N/2-64;
+    qrg = static_cast<float>(fft::bucketToFrequency(zoomOffset, N))/1'000'000.0;
+    renderVFOtrigger = false;
 }
 
 void gui::prepareGradient()
@@ -395,11 +409,20 @@ void gui::renderVFO(float height) {
 
 void gui::dragVFO()
 {
-    if (ImPlot::IsPlotHovered() && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Left))) {
+    if ((ImPlot::IsPlotHovered() && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Left)))||renderVFOtrigger) {
         ImPlotPoint mousePos = ImPlot::GetPlotMousePos();
-        filterStart = mousePos.x - (filterWidth / 1'000'000.0)/2.0;
-        filterEnd = mousePos.x + (filterWidth / 1'000'000.0)/2.0;
-        int newOffset = static_cast<int>(fft::frequencyToBucket(mousePos.x*1'000'000.0, N)) - 64; 
+        double f;
+        if (renderVFOtrigger) {
+            renderVFOtrigger = false;
+            f = qrg;
+        } else {
+            f = mousePos.x;
+        }
+
+        filterStart = f - (filterWidth / 1'000'000.0)/2.0;
+        filterEnd = f + (filterWidth / 1'000'000.0)/2.0;
+        int newOffset = static_cast<int>(fft::frequencyToBucket(f*1'000'000.0, N)) - 64; 
         zoomOffset = std::max(0, std::min(newOffset, static_cast<int>(N) - 128)); 
+        qrg = static_cast<float>(fft::bucketToFrequency(zoomOffset, N))/1'000'000.0;
     }
 }
