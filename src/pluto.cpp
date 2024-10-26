@@ -5,6 +5,7 @@ pluto::pluto(uint64_t N) : N(N)
     std::cout << "Pluto created" << std::endl;
 
     connected = false;
+    fakeConnected = false;
 
     // For complex signals the sample rate is the same as the bandwidth
     // (Reason: for I nyquist holds and for Q as well)
@@ -19,7 +20,14 @@ pluto::pluto(uint64_t N) : N(N)
     rxBuffer = nullptr;
     txBuffer = nullptr;
 
+    // Iniitialize Fake Samples:
+    double f = 210.9375; // Hz
+    phase = 0.0;
+    phaseIncrement = (2.0 * M_PI * f) / static_cast<double>(sampleRate);
+
     fourier = new fft(N);
+    usb = new ssb(N);
+    sound = new audio(usb->out);
 }
 
 iio_scan_context* pluto::getScanContext()
@@ -244,7 +252,27 @@ bool pluto::connect()
     return true;
 }
 
-bool pluto::getSamples()
+bool pluto::fakeConnect() {
+    fakeConnected = true;
+    return true;
+}
+
+bool pluto::getFakeSamples(uint64_t carrier)
+{
+    for(int i = 0; i < N; ++i) {
+        fourier->in[i][0] = cos(phase) + static_cast<double>(rand()) / RAND_MAX * 0.1;
+        fourier->in[i][1] = sin(phase) + static_cast<double>(rand()) / RAND_MAX * 0.1;
+        phase += phaseIncrement;
+        if(phase >= 2.0*M_PI)
+            phase -= 2.0*M_PI;
+    }
+
+    fourier->processSamples();
+
+    return true;
+}
+
+bool pluto::getSamples(uint64_t carrier)
 {
     ssize_t numberOfRxBytes = iio_buffer_refill(rxBuffer);
 
@@ -267,11 +295,18 @@ bool pluto::getSamples()
 
         fourier->in[counter][0] = (static_cast<double>(i)/32768.0f);
         fourier->in[counter][1] = (static_cast<double>(q)/32768.0f);
+
+        //usb->in[counter] = std::complex<float>(
+        //    static_cast<float>(i)/32768.0f,
+        //    static_cast<double>(q)/32768.0f
+        //);
         
         counter++;
     }
 
     fourier->processSamples();
+    //usb->demodulate(carrier);
+    //sound->playback(N);
 
     return true;
 }

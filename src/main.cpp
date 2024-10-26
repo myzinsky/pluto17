@@ -64,6 +64,8 @@ int main(int, char**)
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext();
+
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -86,11 +88,14 @@ int main(int, char**)
     // Main loop
     bool done = false;
     uint64_t N = 4096;
+    uint64_t carrier = 576'000/2;
     pluto pluto(N);
     gui gui(
         std::bind(&pluto::connect, &pluto),
+        std::bind(&pluto::fakeConnect, &pluto),
         std::bind(&pluto::isConnected, &pluto),
         pluto.getFftBuffer(),
+        &carrier,
         N
     );
 
@@ -110,6 +115,7 @@ int main(int, char**)
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
                 done = true;
         }
+
         if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED)
         {
             SDL_Delay(10);
@@ -122,8 +128,13 @@ int main(int, char**)
         ImGui::NewFrame();
 
         if(pluto.isConnected()) {
-            pluto.getSamples();
+            pluto.getSamples(carrier);
         }
+
+        if(pluto.isFakeConnected()) {
+            pluto.getFakeSamples(carrier);
+        }
+
         gui.render();
 
         // Rendering
@@ -138,6 +149,7 @@ int main(int, char**)
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
 
     SDL_GL_DeleteContext(gl_context);

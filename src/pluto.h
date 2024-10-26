@@ -17,8 +17,11 @@ class pluto {
     enum iodev { RX, TX };
 
     bool connect();
+    bool fakeConnect();
     bool isConnected() { return connected; }
-    bool getSamples();
+    bool isFakeConnected() { return fakeConnected; }
+    bool getSamples(uint64_t carrier);
+    bool getFakeSamples(uint64_t carrier);
     uint64_t getN();
 
     fftw_complex* getFftBuffer();
@@ -73,9 +76,21 @@ class pluto {
 
     // Status: 
     bool connected;
+    bool fakeConnected;
 
     // Furier Wrapper:
     fft *fourier;
+
+    // SSB Wrapper:
+    ssb *usb;
+
+    // Audio Wrapper:
+    audio *sound;
+
+    // Fake Samples:
+    double phase;
+    double phaseIncrement;
+
 };
 
 #endif
